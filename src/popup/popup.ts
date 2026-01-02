@@ -6,6 +6,7 @@ import { fetchOpenRouterModels, getProviderPreference, setProviderPreference, ge
 class PopupController {
     private elements: { 
         classifyBtn: HTMLElement;
+        organizeAllBtn: HTMLElement;
         saveApiKeyBtn: HTMLElement;
         apiKeyInput: HTMLInputElement;
         status: HTMLElement;
@@ -22,6 +23,7 @@ class PopupController {
     constructor() {
         this.initializeElements();
         this.bindEvents();
+        this.initializeMessageListener();
         this.loadPageInfo();
         this.checkApiKey();
         this.initializeProviderPreference();
@@ -29,6 +31,7 @@ class PopupController {
 
     private initializeElements() {
         this.elements.classifyBtn = document.getElementById('classify-bookmark')!;
+        this.elements.organizeAllBtn = document.getElementById('organize-all')!;
         this.elements.saveApiKeyBtn = document.getElementById('save-api-key')!;
         this.elements.apiKeyInput = document.getElementById('api-key') as HTMLInputElement;
         this.elements.status = document.getElementById('status')!;
@@ -44,10 +47,45 @@ class PopupController {
 
     private bindEvents() {
         this.elements.classifyBtn.addEventListener('click', () => this.classifyBookmark());
+        this.elements.organizeAllBtn.addEventListener('click', () => this.organizeAllBookmarks());
         this.elements.saveApiKeyBtn.addEventListener('click', () => this.saveApiKey());
         this.elements.providerSelect.addEventListener('change', () => this.onProviderChange());
         this.elements.openRouterModelsSelect.addEventListener('change', () => this.onModelSelected());
         this.elements.refreshModelsBtn.addEventListener('click', () => this.loadOpenRouterModels(true));
+    }
+
+    private initializeMessageListener() {
+        chrome.runtime.onMessage.addListener((message) => {
+            if (message.action === 'ORGANIZE_PROGRESS') {
+                const { processed, total } = message.data;
+                this.showProgress(`Organizing: ${processed}/${total}`);
+            } else if (message.action === 'ORGANIZE_COMPLETE') {
+                const { processed, total } = message.data;
+                this.hideProgress();
+                this.showMessage(`Organization complete! Processed ${processed}/${total} bookmarks.`, 'success');
+                this.elements.organizeAllBtn.removeAttribute('disabled');
+            } else if (message.action === 'ORGANIZE_ERROR') {
+                this.hideProgress();
+                this.showMessage(`Error: ${message.error}`, 'error');
+                this.elements.organizeAllBtn.removeAttribute('disabled');
+            }
+        });
+    }
+
+    private async organizeAllBookmarks() {
+        this.elements.organizeAllBtn.setAttribute('disabled', 'true');
+        this.showProgress('Starting organization...');
+        
+        try {
+            const response = await chrome.runtime.sendMessage({ action: 'ORGANIZE_ALL_BOOKMARKS' });
+            if (!response.success) {
+                throw new Error(response.error);
+            }
+        } catch (error) {
+            this.hideProgress();
+            this.showMessage('Failed to start organization', 'error');
+            this.elements.organizeAllBtn.removeAttribute('disabled');
+        }
     }
 
     private async loadPageInfo() {
@@ -72,13 +110,16 @@ class PopupController {
             if (apiKey) {
                 this.showMessage('API key loaded successfully', 'success');
                 this.elements.classifyBtn.removeAttribute('disabled');
+                this.elements.organizeAllBtn.removeAttribute('disabled');
             } else {
                 this.showMessage('Please configure your API key', 'info');
                 this.elements.classifyBtn.setAttribute('disabled', 'true');
+                this.elements.organizeAllBtn.setAttribute('disabled', 'true');
             }
         } catch (error) {
             this.showMessage('Error loading API key', 'error');
             this.elements.classifyBtn.setAttribute('disabled', 'true');
+            this.elements.organizeAllBtn.setAttribute('disabled', 'true');
         }
     }
 
@@ -98,6 +139,7 @@ class PopupController {
             this.showMessage('API key saved successfully!', 'success');
             this.elements.apiKeyInput.value = '';
             this.elements.classifyBtn.removeAttribute('disabled');
+            this.elements.organizeAllBtn.removeAttribute('disabled');
             if (this.elements.providerSelect.value === 'openrouter') {
                 await this.loadOpenRouterModels(true);
             }

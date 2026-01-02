@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 import { BookmarkManager } from '../utils/bookmark-manager';
+import { LlmClassifier } from '../utils/llm-classifier';
 
 class BackgroundService {
     private bookmarkManager: BookmarkManager;
+    private classifier: LlmClassifier;
 
     constructor() {
         console.log('BackgroundService initializing...');
         this.bookmarkManager = new BookmarkManager();
+        this.classifier = new LlmClassifier();
         this.initializeListeners();
         console.log('BackgroundService initialized successfully');
     }
@@ -43,6 +46,11 @@ class BackgroundService {
                     console.log('Bookmark created successfully:', bookmark);
                     sendResponse({ success: true, bookmark });
                     break;
+                case 'ORGANIZE_ALL_BOOKMARKS':
+                    console.log('Starting organization of all bookmarks...');
+                    this.organizeAllBookmarks();
+                    sendResponse({ success: true, message: 'Organization started' });
+                    break;
                 default:
                     console.warn('Unknown action:', request.action);
                     sendResponse({ success: false, error: 'Unknown action' });
@@ -51,6 +59,47 @@ class BackgroundService {
             console.error('Error handling message:', error);
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             sendResponse({ success: false, error: errorMessage });
+        }
+    }
+
+    private async organizeAllBookmarks() {
+        try {
+            const bookmarks = await this.bookmarkManager.getAllBookmarks();
+            let processed = 0;
+            const total = bookmarks.length;
+            
+            console.log(`Found ${total} bookmarks to organize.`);
+            
+            for (const bookmark of bookmarks) {
+                try {
+                    const classification = await this.classifier.classifyUrl(bookmark.url!, bookmark.title);
+                    await this.bookmarkManager.moveBookmark(bookmark.id, classification.folderPath);
+                    processed++;
+                    
+                    chrome.runtime.sendMessage({
+                        action: 'ORGANIZE_PROGRESS',
+                        data: { processed, total }
+                    }).catch(() => {}); 
+                    
+                } catch (err) {
+                    console.error(`Failed to organize bookmark ${bookmark.url}:`, err);
+                }
+                
+                // Add a small delay to avoid rate limits
+                await new Promise(resolve => setTimeout(resolve, 1000)); 
+            }
+            
+            chrome.runtime.sendMessage({
+                action: 'ORGANIZE_COMPLETE',
+                data: { processed, total }
+            }).catch(() => {});
+
+        } catch (error) {
+            console.error('Error organizing all bookmarks:', error);
+            chrome.runtime.sendMessage({
+                action: 'ORGANIZE_ERROR',
+                error: error instanceof Error ? error.message : 'Unknown error'
+            }).catch(() => {});
         }
     }
 }

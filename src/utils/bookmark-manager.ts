@@ -9,6 +9,30 @@ export class BookmarkManager {
         });
     }
 
+    async moveBookmark(bookmarkId: string, folderPath: string[]): Promise<chrome.bookmarks.BookmarkTreeNode> {
+        const folderId = await this.ensureFolderPath(folderPath);
+        return chrome.bookmarks.move(bookmarkId, { parentId: folderId });
+    }
+
+    async getAllBookmarks(): Promise<chrome.bookmarks.BookmarkTreeNode[]> {
+        const tree = await chrome.bookmarks.getTree();
+        const bookmarks: chrome.bookmarks.BookmarkTreeNode[] = [];
+        
+        const traverse = (nodes: chrome.bookmarks.BookmarkTreeNode[]) => {
+            for (const node of nodes) {
+                if (node.url) {
+                    bookmarks.push(node);
+                }
+                if (node.children) {
+                    traverse(node.children);
+                }
+            }
+        };
+        
+        traverse(tree);
+        return bookmarks;
+    }
+
     private async ensureFolderPath(path: string[]): Promise<string> {
         let currentId = '1'; // Bookmarks menu ID
         for (const folderName of path) {
