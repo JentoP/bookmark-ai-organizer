@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { LlmClassifier } from '../utils/llm-classifier';
 import { SecurityManager } from '../utils/security';
+import { BookmarkManager } from '../utils/bookmark-manager';
 import { fetchOpenRouterModels, getProviderPreference, setProviderPreference, getSelectedOpenRouterModel, setSelectedOpenRouterModel } from '../utils/openrouter';
 
 class PopupController {
@@ -60,9 +61,12 @@ class PopupController {
                 const { processed, total } = message.data;
                 this.showProgress(`Organizing: ${processed}/${total}`);
             } else if (message.action === 'ORGANIZE_COMPLETE') {
-                const { processed, total } = message.data;
+                const { processed, total, removedFolders } = message.data;
                 this.hideProgress();
-                this.showMessage(`Organization complete! Processed ${processed}/${total} bookmarks.`, 'success');
+                const msg = removedFolders 
+                    ? `Organization complete! Processed ${processed}/${total} bookmarks. Removed ${removedFolders} empty folders.`
+                    : `Organization complete! Processed ${processed}/${total} bookmarks.`;
+                this.showMessage(msg, 'success');
                 this.elements.organizeAllBtn.removeAttribute('disabled');
             } else if (message.action === 'ORGANIZE_ERROR') {
                 this.hideProgress();
@@ -214,9 +218,13 @@ class PopupController {
 
             // Create a fresh instance to ensure latest API key is loaded
             const classifier = new LlmClassifier();
-            console.log('Starting classification for:', tab.title);
+            const bookmarkManager = new BookmarkManager();
+            const existingFolders = await bookmarkManager.getExistingFolders();
             
-            const classification = await classifier.classifyUrl(tab.url, tab.title);
+            console.log('Starting classification for:', tab.title);
+            console.log(`Found ${existingFolders.length} existing folders.`);
+            
+            const classification = await classifier.classifyUrl(tab.url, tab.title, existingFolders);
             console.log('Classification result:', classification);
             
             await chrome.runtime.sendMessage({

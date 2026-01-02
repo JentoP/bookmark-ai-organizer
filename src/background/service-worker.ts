@@ -65,14 +65,16 @@ class BackgroundService {
     private async organizeAllBookmarks() {
         try {
             const bookmarks = await this.bookmarkManager.getAllBookmarks();
+            const existingFolders = await this.bookmarkManager.getExistingFolders();
             let processed = 0;
             const total = bookmarks.length;
             
             console.log(`Found ${total} bookmarks to organize.`);
+            console.log(`Found ${existingFolders.length} existing folders.`);
             
             for (const bookmark of bookmarks) {
                 try {
-                    const classification = await this.classifier.classifyUrl(bookmark.url!, bookmark.title);
+                    const classification = await this.classifier.classifyUrl(bookmark.url!, bookmark.title, existingFolders);
                     await this.bookmarkManager.moveBookmark(bookmark.id, classification.folderPath);
                     processed++;
                     
@@ -89,9 +91,13 @@ class BackgroundService {
                 await new Promise(resolve => setTimeout(resolve, 1000)); 
             }
             
+            console.log('Cleaning up empty folders...');
+            const removedCount = await this.bookmarkManager.removeEmptyFolders();
+            console.log(`Removed ${removedCount} empty folders.`);
+
             chrome.runtime.sendMessage({
                 action: 'ORGANIZE_COMPLETE',
-                data: { processed, total }
+                data: { processed, total, removedFolders: removedCount }
             }).catch(() => {});
 
         } catch (error) {
